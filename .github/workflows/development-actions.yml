@@ -1,0 +1,78 @@
+name: CI-CD
+on:
+  push:
+    branches: [ develoment ]
+  workflow_dispatch:
+jobs:
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-java@v2
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+
+      - run: mvn --batch-mode --update-snapshots verify
+      - run: mkdir staging && cp target/*.jar staging
+      - uses: actions/upload-artifact@v2
+        with:
+          name: devops-test-${{ github.run_id }}-${{ github.run_number }}
+          path: ./staging
+
+      - name: Install SSH Key
+        run: ls staging
+
+#      - name: Install SSH Key
+#        uses: shimataro/ssh-key-action@v2
+#        with:
+#           key: ${{ secrets.SSH_KEY }}
+#           known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+
+#      - name: Adding Known Hosts
+#        run: ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: staging-${{ github.run_id }}-${{ github.run_number }}
+#          path: ./staging
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifact #download artifact dans le dossier /build que github crée puis le déployer dans le target ('/var/www/html/')
+        uses: actions/download-artifact@v2
+        with:
+          name: devops-test-${{ github.run_id }}-${{ github.run_number }}
+          path: './build'
+
+      - name: copy file via ssh password
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: './build/*'
+          target: '/home/azureuser/website/app-azure-back/www/'
+
+      - name: Start application
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ./website/app-azure-back
+            ./startup.sh
+
+#      - name: Deploy with rsync
+#        run: |
+#           rsync -avz staging ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:/home/azureuser/
+#
